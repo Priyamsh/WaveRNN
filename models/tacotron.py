@@ -6,86 +6,81 @@ import torch.nn.functional as F
 from pathlib import Path
 from typing import Union
 
-
 class HighwayNetwork(nn.Module):
-    def __init__(self, size):
-        super().__init__()
-        self.W1 = nn.Linear(size, size)
-        self.W2 = nn.Linear(size, size)
+    def __init__(self,size):
+        super.__init__()
+        self.W1 = nn.Linear(size,size)
+        self.W2 = nn.Linear(size,size)
         self.W1.bias.data.fill_(0.)
 
-    def forward(self, x):
-        x1 = self.W1(x)
+    def forward(self,x):
+        y = self.W1(x)
         x2 = self.W2(x)
         g = torch.sigmoid(x2)
-        y = g * F.relu(x1) + (1. - g) * x
-        return y
+        return g*(F.relu(y)) + (1.-g)*x
 
+class PreNet(nn.module):
+    def __init__(self,in_dims,fc1_dims=256,fc2_dims=128,dropout=0.5):
+        super.__init__()
+        self.fc1 = nn.Linear(in_dims,fc1_dims)
+        self.fc2 = nn.Linear(fc1_dims,fc2_dims)
+        self.p=dropout
 
-class Encoder(nn.Module):
-    def __init__(self, embed_dims, num_chars, cbhg_channels, K, num_highways, dropout):
-        super().__init__()
-        self.embedding = nn.Embedding(num_chars, embed_dims)
-        self.pre_net = PreNet(embed_dims)
-        self.cbhg = CBHG(K=K, in_channels=cbhg_channels, channels=cbhg_channels,
-                         proj_channels=[cbhg_channels, cbhg_channels],
-                         num_highways=num_highways)
-
-    def forward(self, x):
-        x = self.embedding(x)
-        x = self.pre_net(x)
-        x.transpose_(1, 2)
-        x = self.cbhg(x)
-        return x
-
+    def forward(self,x):
+        z1 = self.fc1(x)
+        a1 = F.relu(z1)
+        a1 = F.dropout(a1, self.p,training = self.training)
+        z2 = self.fc2(a1)
+        a2 = F.relu(z2)
+        a2 = F.dropout(a2,self.p,training=self.training)
+        return a2
 
 class BatchNormConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel, relu=True):
-        super().__init__()
-        self.conv = nn.Conv1d(in_channels, out_channels, kernel, stride=1, padding=kernel // 2, bias=False)
+    def __init__(self,in_channels,out_channels,kernel_size,relu=True):
+        super.__init__()
+        self.conv = nn.conv1D(in_channels,out_channels,kernel_size,stride=1,padding=kernel//2,bias=False)
         self.bnorm = nn.BatchNorm1d(out_channels)
         self.relu = relu
 
-    def forward(self, x):
-        x = self.conv(x)
-        x = F.relu(x) if self.relu is True else x
-        return self.bnorm(x)
-
+    def forward(self,x):
+        z1 = self.conv(x)
+        a1 = F.relu(z1) if self.relu is True else z1
+        return self.bnorm(a1)
 
 class CBHG(nn.Module):
-    def __init__(self, K, in_channels, channels, proj_channels, num_highways):
-        super().__init__()
+    def __init__(self, K, in_channels,channels,proj_channels,num_highways):
+        super.__init__()
 
-        # List of all rnns to call `flatten_parameters()` on
         self._to_flatten = []
 
-        self.bank_kernels = [i for i in range(1, K + 1)]
+        self.bank_kernels = [i for i in range(1,K+1)]
         self.conv1d_bank = nn.ModuleList()
         for k in self.bank_kernels:
-            conv = BatchNormConv(in_channels, channels, k)
+            conv = BatchNormConv(in_channels,channels,k)
             self.conv1d_bank.append(conv)
 
-        self.maxpool = nn.MaxPool1d(kernel_size=2, stride=1, padding=1)
+        self.maxpool = nn.MaxPool1d(kernel_size=2,stride=1,padding=1)
 
-        self.conv_project1 = BatchNormConv(len(self.bank_kernels) * channels, proj_channels[0], 3)
-        self.conv_project2 = BatchNormConv(proj_channels[0], proj_channels[1], 3, relu=False)
+        self.conv_project1 = BatchNormConv(len(self.bank_kernels)*channels,proj_channels[0],3)
+        self.conv_project2 = BatchNormConv(proj_channels[0],proj_channels[1],3,relu=False)
 
-        # Fix the highway input if necessary
+        # Fixing the highway input
+
         if proj_channels[-1] != channels:
             self.highway_mismatch = True
-            self.pre_highway = nn.Linear(proj_channels[-1], channels, bias=False)
+            self.pre_highway = nn.Linear(proj_channels[-1],channels,bias=False)
         else:
             self.highway_mismatch = False
 
-        self.highways = nn.ModuleList()
-        for i in range(num_highways):
-            hn = HighwayNetwork(channels)
-            self.highways.append(hn)
+        self.highways = nn.ModuleList
 
-        self.rnn = nn.GRU(channels, channels, batch_first=True, bidirectional=True)
+        for i in range(num_highways):
+            highway = HighwayNetwork(channels)
+            self.highways.append(highway)
+
+        self.rnn = nn.GRU(channels,channels,batch_first=True,bidirectional=True)
         self._to_flatten.append(self.rnn)
 
-        # Avoid fragmentation of RNN parameters and associated warning
         self._flatten_parameters()
 
     def forward(self, x):
@@ -99,78 +94,71 @@ class CBHG(nn.Module):
         seq_len = x.size(-1)
         conv_bank = []
 
-        # Convolution Bank
+        # Convolution operations
         for conv in self.conv1d_bank:
-            c = conv(x) # Convolution
-            conv_bank.append(c[:, :, :seq_len])
+            c = conv(x)
+            conv_bank.append(c[:,:,:seq_len])
 
         # Stack along the channel axis
-        conv_bank = torch.cat(conv_bank, dim=1)
+        conv_bank = torch.cat(conv_bank,dim=1)
 
         # dump the last padding to fit residual
-        x = self.maxpool(conv_bank)[:, :, :seq_len]
+        x = self.maxpool(conv_bank)[:,:,:seq_len]
 
-        # Conv1d projections
+        # Conv1D projections
         x = self.conv_project1(x)
         x = self.conv_project2(x)
 
-        # Residual Connect
+        # residual Connect
         x = x + residual
 
         # Through the highways
-        x = x.transpose(1, 2)
+        x = x.transpose(1,2)
         if self.highway_mismatch is True:
             x = self.pre_highway(x)
         for h in self.highways: x = h(x)
 
-        # And then the RNN
-        x, _ = self.rnn(x)
+        # RNN operation
+        x , _ = self.rnn(x)
         return x
 
     def _flatten_parameters(self):
-        """Calls `flatten_parameters` on all the rnns used by the WaveRNN. Used
-        to improve efficiency and avoid PyTorch yelling at us."""
         [m.flatten_parameters() for m in self._to_flatten]
 
-class PreNet(nn.Module):
-    def __init__(self, in_dims, fc1_dims=256, fc2_dims=128, dropout=0.5):
-        super().__init__()
-        self.fc1 = nn.Linear(in_dims, fc1_dims)
-        self.fc2 = nn.Linear(fc1_dims, fc2_dims)
-        self.p = dropout
+class Encoder(nn.Module):
+    def __init__(self, embed_dims,num_chars, cbhg_channels, K, num_highways, dropout):
+        super.__init__()
+        self.embedding = nn.Embedding(num_chars,embed_dims)
+        self.pre_net = PreNet(embed_dims)
+        self.cbhg = CBHG(K=K, in_channels=cbhg_channels, channels=cbhg_channels,
+                         proj_channels=[cbhg_channels, cbhg_channels],
+                         num_highways=num_highways)
 
-    def forward(self, x):
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = F.dropout(x, self.p, training=self.training)
-        x = self.fc2(x)
-        x = F.relu(x)
-        x = F.dropout(x, self.p, training=self.training)
+    def forward(self,x):
+        x = self.embedding(x)
+        x = self.pre_net(x)
+        x.transpose_(1,2)
+        x = self.cbgh(x)
         return x
 
-
 class Attention(nn.Module):
-    def __init__(self, attn_dims):
-        super().__init__()
-        self.W = nn.Linear(attn_dims, attn_dims, bias=False)
-        self.v = nn.Linear(attn_dims, 1, bias=False)
+    def __init__(self,attn_dims):
+        super.__init__()
+        self.W = nn.Linear(attn_dims,attn_dims,bias=False)
+        self.v = nn.Linear(attn_dims,1,bias=False)
 
-    def forward(self, encoder_seq_proj, query, t):
-
-        # print(encoder_seq_proj.shape)
-        # Transform the query vector
+    def forward(self,encoder_seq_proj,query,t):
         query_proj = self.W(query).unsqueeze(1)
 
         # Compute the scores
         u = self.v(torch.tanh(encoder_seq_proj + query_proj))
-        scores = F.softmax(u, dim=1)
+        scores = F.softmax(u,dim=1)
 
-        return scores.transpose(1, 2)
-
+        return scores.transpose(1,2)
 
 class LSA(nn.Module):
-    def __init__(self, attn_dim, kernel_size=31, filters=32):
-        super().__init__()
+    def __init__(self,attn_dim,kernel_size=31,filters=32):
+        super.__init__()
         self.conv = nn.Conv1d(2, filters, padding=(kernel_size - 1) // 2, kernel_size=kernel_size, bias=False)
         self.L = nn.Linear(filters, attn_dim, bias=True)
         self.W = nn.Linear(attn_dim, attn_dim, bias=True)
@@ -185,7 +173,6 @@ class LSA(nn.Module):
         self.attention = torch.zeros(b, t, device=device)
 
     def forward(self, encoder_seq_proj, query, t):
-
         if t == 0: self.init_attention(encoder_seq_proj)
 
         processed_query = self.W(query).unsqueeze(1)
@@ -204,17 +191,19 @@ class LSA(nn.Module):
 
         return scores.unsqueeze(-1).transpose(1, 2)
 
-
 class Decoder(nn.Module):
     # Class variable because its value doesn't change between classes
     # yet ought to be scoped by class because its a property of a Decoder
     max_r = 20
-    def __init__(self, n_mels, decoder_dims, lstm_dims):
+    def __init__(self, n_mels, decoder_dims, lstm_dims,attention = "LSA"):
         super().__init__()
         self.register_buffer('r', torch.tensor(1, dtype=torch.int))
         self.n_mels = n_mels
         self.prenet = PreNet(n_mels)
-        self.attn_net = LSA(decoder_dims)
+        if(attention=="LSA"):
+            self.attn_net = LSA(decoder_dims)
+        else:
+            self.attn_net = Attention(decoder_dims)
         self.attn_rnn = nn.GRUCell(decoder_dims + decoder_dims // 2, decoder_dims)
         self.rnn_input = nn.Linear(2 * decoder_dims, lstm_dims)
         self.res_rnn1 = nn.LSTMCell(lstm_dims, lstm_dims)
@@ -278,10 +267,9 @@ class Decoder(nn.Module):
 
         return mels, scores, hidden_states, cell_states, context_vec
 
-
 class Tacotron(nn.Module):
     def __init__(self, embed_dims, num_chars, encoder_dims, decoder_dims, n_mels, fft_bins, postnet_dims,
-                 encoder_K, lstm_dims, postnet_K, num_highways, dropout, stop_threshold):
+                 encoder_K, lstm_dims, postnet_K, num_highways, dropout, stop_threshold,attention="LSA"):
         super().__init__()
         self.n_mels = n_mels
         self.lstm_dims = lstm_dims
@@ -289,7 +277,10 @@ class Tacotron(nn.Module):
         self.encoder = Encoder(embed_dims, num_chars, encoder_dims,
                                encoder_K, num_highways, dropout)
         self.encoder_proj = nn.Linear(decoder_dims, decoder_dims, bias=False)
-        self.decoder = Decoder(n_mels, decoder_dims, lstm_dims)
+        if(attention=="LSA"):
+            self.decoder = Decoder(n_mels, decoder_dims, lstm_dims)
+        else:
+            self.decoder = Decoder(n_mels, decoder_dims, lstm_dims,attention="attention")
         self.postnet = CBHG(postnet_K, n_mels, postnet_dims, [256, 80], num_highways)
         self.post_proj = nn.Linear(postnet_dims * 2, fft_bins, bias=False)
 
