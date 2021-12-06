@@ -8,7 +8,7 @@ from typing import Union
 
 class HighwayNetwork(nn.Module):
     def __init__(self,size):
-        super.__init__()
+        super().__init__()
         self.W1 = nn.Linear(size,size)
         self.W2 = nn.Linear(size,size)
         self.W1.bias.data.fill_(0.)
@@ -21,7 +21,7 @@ class HighwayNetwork(nn.Module):
 
 class PreNet(nn.module):
     def __init__(self,in_dims,fc1_dims=256,fc2_dims=128,dropout=0.5):
-        super.__init__()
+        super().__init__()
         self.fc1 = nn.Linear(in_dims,fc1_dims)
         self.fc2 = nn.Linear(fc1_dims,fc2_dims)
         self.p=dropout
@@ -37,7 +37,7 @@ class PreNet(nn.module):
 
 class BatchNormConv(nn.Module):
     def __init__(self,in_channels,out_channels,kernel_size,relu=True):
-        super.__init__()
+        super().__init__()
         self.conv = nn.conv1D(in_channels,out_channels,kernel_size,stride=1,padding=kernel//2,bias=False)
         self.bnorm = nn.BatchNorm1d(out_channels)
         self.relu = relu
@@ -49,7 +49,7 @@ class BatchNormConv(nn.Module):
 
 class CBHG(nn.Module):
     def __init__(self, K, in_channels,channels,proj_channels,num_highways):
-        super.__init__()
+        super().__init__()
 
         self._to_flatten = []
 
@@ -127,7 +127,7 @@ class CBHG(nn.Module):
 
 class Encoder(nn.Module):
     def __init__(self, embed_dims,num_chars, cbhg_channels, K, num_highways, dropout):
-        super.__init__()
+        super().__init__()
         self.embedding = nn.Embedding(num_chars,embed_dims)
         self.pre_net = PreNet(embed_dims)
         self.cbhg = CBHG(K=K, in_channels=cbhg_channels, channels=cbhg_channels,
@@ -143,7 +143,7 @@ class Encoder(nn.Module):
 
 class Attention(nn.Module):
     def __init__(self,attn_dims):
-        super.__init__()
+        super().__init__()
         self.W = nn.Linear(attn_dims,attn_dims,bias=False)
         self.v = nn.Linear(attn_dims,1,bias=False)
 
@@ -158,7 +158,7 @@ class Attention(nn.Module):
 
 class LSA(nn.Module):
     def __init__(self,attn_dim,kernel_size=31,filters=32):
-        super.__init__()
+        super().__init__()
         self.conv = nn.Conv1d(2, filters, padding=(kernel_size - 1) // 2, kernel_size=kernel_size, bias=False)
         self.L = nn.Linear(filters, attn_dim, bias=True)
         self.W = nn.Linear(attn_dim, attn_dim, bias=True)
