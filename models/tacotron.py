@@ -19,7 +19,7 @@ class HighwayNetwork(nn.Module):
         g = torch.sigmoid(x2)
         return g*(F.relu(y)) + (1.-g)*x
 
-class PreNet(nn.module):
+class PreNet(nn.Module):
     def __init__(self,in_dims,fc1_dims=256,fc2_dims=128,dropout=0.5):
         super().__init__()
         self.fc1 = nn.Linear(in_dims,fc1_dims)
@@ -72,7 +72,7 @@ class CBHG(nn.Module):
         else:
             self.highway_mismatch = False
 
-        self.highways = nn.ModuleList
+        self.highways = nn.ModuleList()
 
         for i in range(num_highways):
             highway = HighwayNetwork(channels)
@@ -138,7 +138,7 @@ class Encoder(nn.Module):
         x = self.embedding(x)
         x = self.pre_net(x)
         x.transpose_(1,2)
-        x = self.cbgh(x)
+        x = self.cbhg(x)
         return x
 
 class Attention(nn.Module):
